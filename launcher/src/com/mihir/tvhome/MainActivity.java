@@ -927,7 +927,7 @@ public class MainActivity extends Activity {
         actions.add(() -> { closeSettings(); launch(new Intent(Settings.ACTION_SETTINGS)); });
         rows.add(new String[]{"Columns", String.valueOf(cols)});
         actions.add(() -> change(prefs.edit().putInt("columns", cols >= 8 ? 4 : cols + 1)));
-        labels.add("Dock columns: " + dockCols);
+        rows.add(new String[]{"Dock columns", String.valueOf(dockCols)});
         actions.add(() -> change(prefs.edit().putInt("dock_columns", dockCols >= 8 ? 4 : dockCols + 1)));
         if (systemSearch() != null) { // no system search: no pill, nothing to toggle
             boolean on = prefs.getBoolean("search", true);
