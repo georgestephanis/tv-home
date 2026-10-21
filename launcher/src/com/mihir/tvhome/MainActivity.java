@@ -100,7 +100,6 @@ public class MainActivity extends Activity {
     private int glowColor = 0xFF3A3A3A;
     private ValueAnimator glowAnim;
     private int lastFocusedId = View.NO_ID;
-    private boolean resumed;
     private boolean firstShow = true;
     private int packageSeq;
 
@@ -141,7 +140,6 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        resumed = true;
         IntentFilter tf = new IntentFilter(Intent.ACTION_TIME_TICK);
         tf.addAction(Intent.ACTION_TIME_CHANGED);
         tf.addAction(Intent.ACTION_TIMEZONE_CHANGED);
@@ -161,7 +159,6 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
-        resumed = false;
         handler.removeCallbacks(rotateWallpaper);
         unregisterReceiver(tick);
         stopMoving();
@@ -185,7 +182,7 @@ public class MainActivity extends Activity {
         // Home pressed while already home: jump back to the first dock app. From another app, keep focus where it was.
         stopMoving();
         collapseHidden();
-        if (!resumed) return;
+        if (!hasWindowFocus()) return; // the activity is paused for the intent either way
         if (!dockCards.isEmpty()) dockCards.get(0).requestFocus();
         scroll.smoothScrollTo(0, 0);
     }
