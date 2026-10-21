@@ -594,7 +594,8 @@ public class MainActivity extends Activity {
             App a = (App) c.getTag();
             if (!a.pkg.equals(pkg)) continue;
             c.requestFocus();
-            if (pkg.equals(moving)) title.setText("Moving " + a.label + "   \u25C0 \u25B6 \u25B2 \u25BC   OK when done");
+            // Set explicitly: refocusing an already-focused tile doesn't fire its focus listener.
+            title.setText(pkg.equals(moving) ? "Moving " + a.label + "   \u25C0 \u25B6 \u25B2 \u25BC   OK when done" : a.label);
             return;
         }
     }
