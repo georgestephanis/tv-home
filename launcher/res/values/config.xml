@@ -1,37 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-  Launcher settings. Edit, then run launcher/build-and-install.sh.
-  Package names: tools/venv/bin/python -I tools/tv.py 'pm list packages'
--->
+<!-- Launcher settings. Edit, then run ../build-launcher.sh. -->
 <resources>
-    <!-- Dock apps, left to right. Apps that aren't installed are skipped. -->
+    <!-- Dock apps, left to right, wrapping every dock_columns. Apps that aren't installed are skipped. -->
     <string-array name="dock_apps">
-        <item>com.apple.atve.androidtv.appletv</item>
+        <item>com.crunchyroll.crunchyroid</item>
         <item>com.google.android.youtube.tv</item>
-        <item>in.startv.hotstar</item>
         <item>com.netflix.ninja</item>
         <item>com.amazon.amazonvideo.livingroom</item>
+        <item>com.cbs.ott</item>
+        <item>com.disney.disneyplus</item>
+        <item>com.wbd.stream</item>
+        <item>com.apple.atve.androidtv.appletv</item>
+        <item>com.ntathome</item>
+        <item>com.gamesworkshop.warhammertv</item>
+        <item>com.plexapp.android</item>
+        <item>com.cxinventor.file.explorer</item>
     </string-array>
 
-    <!-- Never shown as tiles: system helpers, and the Live TV app (it's in the Inputs menu). -->
+    <!-- Never shown as tiles. -->
     <string-array name="hidden_apps">
-        <item>com.tcl.tv</item>
-        <item>com.tcl.suspension</item>
-        <item>com.tcl.t_solo</item>
-        <item>com.tcl.dashboard</item>
     </string-array>
 
-    <!-- The TV's Live TV / tuner app, listed last in the Inputs menu. Empty to leave it out.
-         Common ones: com.tcl.tv (TCL), com.mediatek.wwtv.tvcenter (Xiaomi, many MediaTek sets),
-         com.google.android.tv (Google Live Channels), com.sony.dtv.tvx (Sony). -->
-    <string name="live_tv_package" translatable="false">com.tcl.tv</string>
-
-    <!-- The manufacturer's own source picker, used if switching to an input directly fails. -->
-    <string name="input_picker_package" translatable="false">com.tcl.suspension</string>
-
-    <!-- Dock tiles per row; longer docks wrap onto more rows. -->
     <integer name="dock_columns">6</integer>
-
-    <!-- Tiles per row in the grid. -->
-    <integer name="columns">5</integer>
+    <!-- Tiles per row in the All apps grid. -->
+    <integer name="columns">6</integer>
 </resources>

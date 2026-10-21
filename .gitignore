@@ -10,3 +10,6 @@ shots/
 launcher/build/
 .DS_Store
 __pycache__/
+my-tv/backup-*
+my-tv/disabled-by-debloat.txt
+my-tv/shots/

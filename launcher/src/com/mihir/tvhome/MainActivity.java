@@ -19,10 +19,6 @@ import android.graphics.Outline;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
-import android.media.tv.TvContract;
-import android.media.tv.TvInputInfo;
-import android.media.tv.TvInputManager;
-import android.net.wifi.WifiManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -39,7 +35,6 @@ import android.view.animation.OvershootInterpolator;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
-import android.widget.PopupWindow;
 import android.widget.TextView;
 
 import java.text.SimpleDateFormat;
@@ -64,7 +59,6 @@ public class MainActivity extends Activity {
     // Dock, hidden apps, Live TV and grid width come from res/values/config.xml.
     private String[] dockApps;
     private final Set<String> hidden = new HashSet<>();
-    private String liveTvPkg, inputPickerPkg;
     private int cols, dockCols;
 
     static final class App {
@@ -93,16 +87,15 @@ public class MainActivity extends Activity {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable rotateWallpaper = this::nextWallpaper;
     static final long WALLPAPER_INTERVAL_MS = 10 * 60 * 1000;
-    private TextView greeting, clock, ampm, date, title, wifiPill, appsLabel;
+    private TextView greeting, clock, ampm, date, title, appsLabel;
     private int glowColor = 0xFF3A3A3A;
     private ValueAnimator glowAnim;
     private int lastFocusedId = View.NO_ID;
     private boolean firstShow = true;
     private int packageSeq;
-    private PopupWindow inputsPopup;
 
     private final BroadcastReceiver tick = new BroadcastReceiver() {
-        @Override public void onReceive(Context c, Intent i) { updateClock(); updateWifi(); }
+        @Override public void onReceive(Context c, Intent i) { updateClock(); }
     };
     private final BroadcastReceiver packages = new BroadcastReceiver() {
         @Override public void onReceive(Context c, Intent i) { buildApps(); }
@@ -116,8 +109,6 @@ public class MainActivity extends Activity {
         dockApps = getResources().getStringArray(R.array.dock_apps);
         hidden.addAll(Arrays.asList(getResources().getStringArray(R.array.hidden_apps)));
         hidden.add(getPackageName());
-        liveTvPkg = getString(R.string.live_tv_package);
-        inputPickerPkg = getString(R.string.input_picker_package);
         cols = getResources().getInteger(R.integer.columns);
         dockCols = getResources().getInteger(R.integer.dock_columns);
         getWindow().getDecorView().setSystemUiVisibility(
@@ -140,10 +131,8 @@ public class MainActivity extends Activity {
         IntentFilter tf = new IntentFilter(Intent.ACTION_TIME_TICK);
         tf.addAction(Intent.ACTION_TIME_CHANGED);
         tf.addAction(Intent.ACTION_TIMEZONE_CHANGED);
-        tf.addAction(WifiManager.NETWORK_STATE_CHANGED_ACTION);
         registerReceiver(tick, tf);
         updateClock();
-        updateWifi();
         View last = lastFocusedId == View.NO_ID ? null : findViewById(lastFocusedId);
         if (last == null && !dockCards.isEmpty()) last = dockCards.get(0);
         if (last != null) last.requestFocus();
@@ -160,7 +149,6 @@ public class MainActivity extends Activity {
         super.onPause();
         handler.removeCallbacks(rotateWallpaper);
         unregisterReceiver(tick);
-        if (inputsPopup != null) inputsPopup.dismiss();
     }
 
     @Override
@@ -173,7 +161,6 @@ public class MainActivity extends Activity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         // Home pressed while already home: jump back to the first dock app.
-        if (inputsPopup != null) inputsPopup.dismiss();
         if (!dockCards.isEmpty()) dockCards.get(0).requestFocus();
         scroll.smoothScrollTo(0, 0);
     }
@@ -301,13 +288,9 @@ public class MainActivity extends Activity {
         LinearLayout right = new LinearLayout(this);
         right.setGravity(Gravity.CENTER_VERTICAL);
         right.setClipChildren(false);
-        TextView inputs = pill("Inputs", "⇥");
-        inputs.setOnClickListener(v -> showInputs(v));
-        wifiPill = pill("Wi-Fi", "◉");
-        wifiPill.setOnClickListener(v -> launch(new Intent(Settings.ACTION_WIFI_SETTINGS)));
         TextView settings = pill("Settings", "⚙");
         settings.setOnClickListener(v -> launch(new Intent(Settings.ACTION_SETTINGS)));
-        for (TextView p : new TextView[]{inputs, wifiPill, settings}) {
+        for (TextView p : new TextView[]{settings}) {
             right.addView(p, llp(-2, dp(30), dp(10), 0, 0, 0));
             pills.add(p);
         }
@@ -549,82 +532,6 @@ public class MainActivity extends Activity {
         scroll.smoothScrollTo(0, Math.max(0, Math.min(target, max)));
     }
 
-    // ---------------------------------------------------------------- inputs
-
-    private void showInputs(View anchor) {
-        LinearLayout list = new LinearLayout(this);
-        list.setOrientation(LinearLayout.VERTICAL);
-        list.setPadding(dp(8), dp(8), dp(8), dp(8));
-        GradientDrawable bg = new GradientDrawable();
-        bg.setCornerRadius(dp(16));
-        bg.setColor(0xF02A2A2E);
-        bg.setStroke(dp(1), 0x26FFFFFF);
-        list.setBackground(bg);
-
-        PopupWindow pw = new PopupWindow(list, dp(200), -2, true);
-        List<TextView> rows = new ArrayList<>();
-
-        TvInputManager tim = (TvInputManager) getSystemService(TV_INPUT_SERVICE);
-        List<TvInputInfo> inputs = new ArrayList<>();
-        if (tim != null) for (TvInputInfo t : tim.getTvInputList()) {
-            if (t.isPassthroughInput() && !t.isHidden(this)) inputs.add(t);
-        }
-        Collections.sort(inputs, (x, y) -> inputLabel(x).compareToIgnoreCase(inputLabel(y)));
-        for (TvInputInfo t : inputs) {
-            rows.add(inputRow(inputLabel(t), () -> {
-                Intent i = new Intent(Intent.ACTION_VIEW, TvContract.buildChannelUriForPassthroughInput(t.getId()));
-                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                if (!launch(i)) openPackage(inputPickerPkg);
-            }));
-        }
-        if (isInstalled(liveTvPkg)) rows.add(inputRow("Live TV", () -> openPackage(liveTvPkg)));
-        if (inputs.isEmpty() && isInstalled(inputPickerPkg)) rows.add(inputRow("All sources…", () -> openPackage(inputPickerPkg)));
-
-        if (rows.isEmpty()) rows.add(inputRow("Settings", () -> launch(new Intent(Settings.ACTION_SETTINGS))));
-        for (TextView r : rows) {
-            r.setOnClickListener(v -> { pw.dismiss(); ((Runnable) v.getTag()).run(); });
-            list.addView(r, new LinearLayout.LayoutParams(-1, dp(36)));
-        }
-        for (int i = 0; i < rows.size(); i++) {
-            TextView r = rows.get(i);
-            r.setNextFocusUpId(rows.get(Math.max(0, i - 1)).getId());
-            r.setNextFocusDownId(rows.get(Math.min(rows.size() - 1, i + 1)).getId());
-            r.setNextFocusLeftId(r.getId());
-            r.setNextFocusRightId(r.getId());
-        }
-        pw.setOutsideTouchable(true);
-        pw.setElevation(dp(16));
-        pw.setOnDismissListener(() -> { inputsPopup = null; anchor.requestFocus(); });
-        inputsPopup = pw;
-        pw.showAsDropDown(anchor, 0, dp(8), Gravity.START);
-        rows.get(0).requestFocus();
-    }
-
-    private String inputLabel(TvInputInfo t) {
-        CharSequence c = t.loadCustomLabel(this);
-        if (c == null || c.length() == 0) c = t.loadLabel(this);
-        return String.valueOf(c);
-    }
-
-    private TextView inputRow(String label, Runnable action) {
-        TextView r = text(13, "sans-serif", Color.WHITE);
-        r.setText(label);
-        r.setTag(action);
-        r.setId(View.generateViewId());
-        r.setGravity(Gravity.CENTER_VERTICAL);
-        r.setPadding(dp(14), 0, dp(14), 0);
-        r.setFocusable(true);
-        GradientDrawable bg = new GradientDrawable();
-        bg.setCornerRadius(dp(10));
-        bg.setColor(Color.TRANSPARENT);
-        r.setBackground(bg);
-        r.setOnFocusChangeListener((v, has) -> {
-            bg.setColor(has ? 0xF2FFFFFF : Color.TRANSPARENT);
-            r.setTextColor(has ? 0xFF111111 : Color.WHITE);
-        });
-        return r;
-    }
-
     // ---------------------------------------------------------------- status
 
     private void updateClock() {
@@ -635,19 +542,6 @@ public class MainActivity extends Activity {
         clock.setText(new SimpleDateFormat(is24 ? "H:mm" : "h:mm", Locale.getDefault()).format(now.getTime()));
         ampm.setText(is24 ? "" : (h < 12 ? "AM" : "PM"));
         date.setText(new SimpleDateFormat("EEEE  d MMMM", Locale.getDefault()).format(now.getTime()).toUpperCase(Locale.getDefault()));
-    }
-
-    private void updateWifi() {
-        String name = "Wi-Fi";
-        try {
-            WifiManager wm = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
-            if (wm != null && wm.getConnectionInfo() != null) {
-                String s = wm.getConnectionInfo().getSSID();
-                if (s != null && !s.contains("unknown ssid")) name = s.replace("\"", "");
-                if (wm.getConnectionInfo().getNetworkId() == -1) name = "Offline";
-            }
-        } catch (SecurityException ignored) { }
-        wifiPill.setText("◉  " + name);
     }
 
     // ---------------------------------------------------------------- glow
@@ -791,22 +685,6 @@ public class MainActivity extends Activity {
         }
     }
 
-    private boolean isInstalled(String pkg) {
-        if (pkg == null || pkg.isEmpty()) return false;
-        try {
-            getPackageManager().getPackageInfo(pkg, 0);
-            return true;
-        } catch (PackageManager.NameNotFoundException e) {
-            return false;
-        }
-    }
-
-    private void openPackage(String pkg) {
-        Intent i = getPackageManager().getLeanbackLaunchIntentForPackage(pkg);
-        if (i == null) i = getPackageManager().getLaunchIntentForPackage(pkg);
-        if (i != null) launch(i);
-    }
-
     private TextView text(float sp, String family, int color) {
         TextView t = new TextView(this);
         t.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp);
@@ -837,16 +715,6 @@ public class MainActivity extends Activity {
 
     private static int darken(int c, float f) {
         return Color.rgb((int) (Color.red(c) * f), (int) (Color.green(c) * f), (int) (Color.blue(c) * f));
-    }
-
-    @Override
-    public boolean dispatchKeyEvent(KeyEvent e) {
-        // Menu key on the remote opens the Inputs dropdown.
-        if (e.getKeyCode() == KeyEvent.KEYCODE_MENU && e.getAction() == KeyEvent.ACTION_UP && !pills.isEmpty()) {
-            showInputs(pills.get(0));
-            return true;
-        }
-        return super.dispatchKeyEvent(e);
     }
 
     /** 16:9 container. */
