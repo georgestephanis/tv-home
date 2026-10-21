@@ -922,26 +922,8 @@ public class MainActivity extends Activity {
     private void showSettings(int pos, boolean animate) {
         SharedPreferences prefs = getPreferences(MODE_PRIVATE);
         Intent home = new Intent(Settings.ACTION_HOME_SETTINGS);
-        List<String[]> rows = new ArrayList<>();
-        List<Runnable> actions = new ArrayList<>();
-        rows.add(new String[]{"TV settings", "›"});
-        actions.add(() -> { closeSettings(); launch(new Intent(Settings.ACTION_SETTINGS)); });
-        rows.add(new String[]{"Columns", String.valueOf(cols)});
-        actions.add(() -> change(prefs.edit().putInt("columns", cols >= 8 ? 4 : cols + 1)));
-        rows.add(new String[]{"Dock columns", String.valueOf(dockCols)});
-        actions.add(() -> change(prefs.edit().putInt("dock_columns", dockCols >= 8 ? 4 : dockCols + 1)));
-        if (systemSearch() != null) { // no system search: no pill, nothing to toggle
-            boolean on = prefs.getBoolean("search", true);
-            rows.add(new String[]{"Search button", on ? "On" : "Off"});
-            actions.add(() -> change(prefs.edit().putBoolean("search", !on)));
-        }
-        if (getPackageManager().resolveActivity(home, 0) != null) {
-            rows.add(new String[]{"Default home app", "›"});
-            actions.add(() -> { closeSettings(); launch(home); });
-        }
-
         FrameLayout overlay = new FrameLayout(this);
-        overlay.setBackgroundColor(0x99000000);
+        overlay.setBackgroundColor(0x66000000);
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(dp(28), dp(36), dp(28), dp(28));
@@ -949,46 +931,85 @@ public class MainActivity extends Activity {
         TextView title = text(24, "sans-serif-light", Color.WHITE);
         title.setText("Settings");
         panel.addView(title, llp(-2, -2, dp(12), 0, 0, dp(20)));
-        List<View> views = new ArrayList<>();
-        for (int k = 0; k < rows.size(); k++) {
-            int which = k;
-            LinearLayout row = new LinearLayout(this);
-            row.setGravity(Gravity.CENTER_VERTICAL);
-            row.setPadding(dp(16), 0, dp(16), 0);
-            row.setFocusable(true);
-            row.setId(View.generateViewId());
-            TextView label = text(15, "sans-serif", 0xE6FFFFFF), value = text(15, "sans-serif-medium", 0x99FFFFFF);
-            label.setText(rows.get(k)[0]);
-            value.setText(rows.get(k)[1]);
-            row.addView(label, new LinearLayout.LayoutParams(0, -2, 1));
-            row.addView(value);
-            GradientDrawable bg = new GradientDrawable();
-            bg.setCornerRadius(dp(12));
-            row.setBackground(bg);
-            row.setOnFocusChangeListener((v, has) -> {
-                bg.setColor(has ? 0xF2FFFFFF : 0);
-                label.setTextColor(has ? 0xFF111111 : 0xE6FFFFFF);
-                value.setTextColor(has ? 0xFF555555 : 0x99FFFFFF);
-            });
-            row.setOnClickListener(v -> { clickedPos = which; actions.get(which).run(); });
-            row.setNextFocusLeftId(row.getId());
-            row.setNextFocusRightId(row.getId());
-            panel.addView(row, llp(-1, dp(48), 0, 0, 0, dp(4)));
-            views.add(row);
+
+        settingsRow(panel, "TV settings", "›", () -> { closeSettings(); launch(new Intent(Settings.ACTION_SETTINGS)); }, null, null);
+        numberRow(panel, prefs, "Columns", "columns", cols,
+                () -> scroll.smoothScrollTo(0, Math.max(0, appsLabel.getTop() - dp(48)))); // show the grid it changes
+        numberRow(panel, prefs, "Dock columns", "dock_columns", dockCols, () -> scroll.smoothScrollTo(0, 0));
+        if (systemSearch() != null) { // no system search: no pill, nothing to toggle
+            boolean on = prefs.getBoolean("search", true);
+            settingsRow(panel, "Search button", on ? "On" : "Off", () -> change(prefs.edit().putBoolean("search", !on)), null,
+                    () -> scroll.smoothScrollTo(0, 0));
         }
-        views.get(0).setNextFocusUpId(views.get(0).getId());
-        views.get(views.size() - 1).setNextFocusDownId(views.get(views.size() - 1).getId());
+        if (getPackageManager().resolveActivity(home, 0) != null)
+            settingsRow(panel, "Default home app", "›", () -> { closeSettings(); launch(home); }, null, null);
+
+        List<View> rows = new ArrayList<>();
+        for (int k = 1; k < panel.getChildCount(); k++) rows.add(panel.getChildAt(k));
+        rows.get(0).setNextFocusUpId(rows.get(0).getId());
+        rows.get(rows.size() - 1).setNextFocusDownId(rows.get(rows.size() - 1).getId());
         overlay.addView(panel, new FrameLayout.LayoutParams(dp(360), -1, Gravity.END));
         trapFocus(true); // also stops the dock grabbing focus as the activity comes back up
         root.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
         settingsPanel = overlay;
-        views.get(Math.min(pos, views.size() - 1)).requestFocus();
+        // Shrink the home screen into the space left of the panel so changes stay in view.
+        int screenW = getResources().getDisplayMetrics().widthPixels, screenH = getResources().getDisplayMetrics().heightPixels;
+        float shrink = (float) (screenW - dp(360) - dp(24)) / screenW;
+        scroll.setPivotX(dp(12));
+        scroll.setPivotY(screenH / 2f);
         if (animate) {
             overlay.setAlpha(0f);
             overlay.animate().alpha(1f).setDuration(200).start();
             panel.setTranslationX(dp(360));
             panel.animate().translationX(0).setInterpolator(new DecelerateInterpolator(2f)).setDuration(260).start();
+            scroll.animate().scaleX(shrink).scaleY(shrink).setInterpolator(new DecelerateInterpolator(2f)).setDuration(260).start();
+        } else {
+            scroll.setScaleX(shrink);
+            scroll.setScaleY(shrink);
         }
+        View focus = rows.get(Math.min(pos, rows.size() - 1));
+        scroll.post(focus::requestFocus); // after layout, so its preview can scroll to real positions
+    }
+
+    /** A 4–8 number changed with Left/Right. */
+    private void numberRow(LinearLayout panel, SharedPreferences prefs, String label, String key, int value, Runnable preview) {
+        settingsRow(panel, label, (value > 4 ? "‹   " : "     ") + value + (value < 8 ? "   ›" : "     "), null, d -> {
+            if (value + d >= 4 && value + d <= 8) change(prefs.edit().putInt(key, value + d));
+        }, preview);
+    }
+
+    /** One panel row: click runs {@code click}; Left/Right call {@code step} with -1/+1; focusing it runs {@code preview}. */
+    private void settingsRow(LinearLayout panel, String text, String val, Runnable click,
+                             java.util.function.IntConsumer step, Runnable preview) {
+        int index = panel.getChildCount() - 1; // the title is child 0
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(16), 0, dp(16), 0);
+        row.setFocusable(true);
+        row.setId(View.generateViewId());
+        TextView label = text(15, "sans-serif", 0xE6FFFFFF), value = text(15, "sans-serif-medium", 0x99FFFFFF);
+        label.setText(text);
+        value.setText(val);
+        row.addView(label, new LinearLayout.LayoutParams(0, -2, 1));
+        row.addView(value);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setCornerRadius(dp(12));
+        row.setBackground(bg);
+        row.setOnFocusChangeListener((v, has) -> {
+            bg.setColor(has ? 0xF2FFFFFF : 0);
+            label.setTextColor(has ? 0xFF111111 : 0xE6FFFFFF);
+            value.setTextColor(has ? 0xFF555555 : 0x99FFFFFF);
+            if (has && preview != null) preview.run();
+        });
+        if (click != null) row.setOnClickListener(v -> { clickedPos = index; click.run(); });
+        if (step != null) row.setOnKeyListener((v, code, e) -> {
+            if (code != KeyEvent.KEYCODE_DPAD_LEFT && code != KeyEvent.KEYCODE_DPAD_RIGHT) return false;
+            if (e.getAction() == KeyEvent.ACTION_DOWN) { clickedPos = index; step.accept(code == KeyEvent.KEYCODE_DPAD_LEFT ? -1 : 1); }
+            return true;
+        });
+        row.setNextFocusLeftId(row.getId());
+        row.setNextFocusRightId(row.getId());
+        panel.addView(row, llp(-1, dp(48), 0, 0, 0, dp(4)));
     }
 
     private void closeSettings() {
@@ -997,6 +1018,8 @@ public class MainActivity extends Activity {
         trapFocus(false);
         overlay.animate().alpha(0f).setDuration(200).withEndAction(() -> root.removeView(overlay)).start();
         ((ViewGroup) overlay).getChildAt(0).animate().translationX(dp(360)).setDuration(200).start();
+        scroll.animate().scaleX(1f).scaleY(1f).setDuration(200).start();
+        scroll.smoothScrollTo(0, 0);
         if (!pills.isEmpty()) pills.get(pills.size() - 1).requestFocus();
     }
 
