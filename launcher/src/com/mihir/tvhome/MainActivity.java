@@ -4,7 +4,6 @@ import android.animation.ArgbEvaluator;
 import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
@@ -92,7 +91,7 @@ public class MainActivity extends Activity {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable rotateWallpaper = this::nextWallpaper;
     static final long WALLPAPER_INTERVAL_MS = 10 * 60 * 1000;
-    private TextView greeting, clock, ampm, date, title, appsLabel;
+    private TextView greeting, clock, ampm, date, title, appsLabel, hint;
     private int glowColor = 0xFF3A3A3A;
     private ValueAnimator glowAnim;
     private int lastFocusedId = View.NO_ID;
@@ -237,8 +236,14 @@ public class MainActivity extends Activity {
         title = text(34, "sans-serif-light", Color.WHITE);
         title.setShadowLayer(dp(18), 0, 0, 0x66000000);
         title.setSingleLine(true);
-        bottom.addView(title, new LinearLayout.LayoutParams(-2, -2));
-        ((LinearLayout.LayoutParams) title.getLayoutParams()).setMargins(dp(8), 0, 0, dp(14));
+        // Title with a small move-mode hint beside it, sharing the baseline.
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.addView(title);
+        hint = text(11, "sans-serif-medium", 0x99FFFFFF);
+        hint.setLetterSpacing(0.22f);
+        hint.setVisibility(View.GONE);
+        titleRow.addView(hint, llp(-2, -2, dp(20), 0, 0, 0));
+        bottom.addView(titleRow, llp(-2, -2, dp(8), 0, 0, dp(14)));
 
         dockRow = new LinearLayout(this);
         dockRow.setOrientation(LinearLayout.VERTICAL); // rows of dockCols tiles
@@ -544,21 +549,10 @@ public class MainActivity extends Activity {
 
     // ---------------------------------------------------------------- editing the dock
 
-    /** Long-press: a dock app starts moving (wiggles); an All apps app can be added to the dock. */
+    /** Long-press: the app starts wiggling. In the dock it can be moved; in All apps, Up adds it. */
     private void editTile(App app, boolean inDock) {
-        if (inDock) {
-            moving = app.pkg;
-            focusDock(app.pkg);
-            return;
-        }
-        new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                .setTitle(app.label)
-                .setItems(new String[]{"Add to favorites"}, (d, which) -> {
-                    dockApps.add(app.pkg);
-                    saveDock();
-                    focusDock(app.pkg);
-                })
-                .show();
+        moving = app.pkg;
+        focusApp(app.pkg);
     }
 
     /** Down past the last dock row: drop the moving app into All apps. */
@@ -567,11 +561,13 @@ public class MainActivity extends Activity {
         stopMoving();
         dockApps.remove(p);
         saveDock();
-        for (View c : gridCards) if (((App) c.getTag()).pkg.equals(p)) c.requestFocus();
+        focusApp(p);
     }
 
     private void stopMoving() {
         moving = null;
+        hint.setVisibility(View.GONE);
+        appsLabel.setText("ALL APPS");
         if (wiggle == null) return;
         wiggle.cancel();
         ((View) wiggle.getTarget()).setRotation(0);
@@ -593,7 +589,7 @@ public class MainActivity extends Activity {
         dockApps.clear();
         dockApps.addAll(order);
         saveDock();
-        focusDock(moving);
+        focusApp(moving);
     }
 
     private List<String> dockPackages() {
@@ -607,22 +603,28 @@ public class MainActivity extends Activity {
         buildApps();
     }
 
-    private void focusDock(String pkg) {
-        for (View c : dockCards) {
+    /** Focus an app's tile by package (view ids change on every rebuild); wiggle it if it's moving. */
+    private void focusApp(String pkg) {
+        List<View> all = new ArrayList<>(dockCards);
+        all.addAll(gridCards);
+        for (View c : all) {
             App a = (App) c.getTag();
             if (!a.pkg.equals(pkg)) continue;
             c.requestFocus();
             // Set explicitly: refocusing an already-focused tile doesn't fire its focus listener.
-            title.setText(pkg.equals(moving) ? "Moving " + a.label
-                    + (movingOnLastRow() ? "  \u00B7  \u25BC removes" : "") + "  \u00B7  OK when done" : a.label);
-            if (pkg.equals(moving)) {
-                if (wiggle != null) wiggle.cancel(); // its tile was replaced by the rebuild
-                wiggle = ObjectAnimator.ofFloat(c, View.ROTATION, -2f, 2f);
-                wiggle.setDuration(110);
-                wiggle.setRepeatMode(ValueAnimator.REVERSE);
-                wiggle.setRepeatCount(ValueAnimator.INFINITE);
-                wiggle.start();
-            }
+            if (dockCards.contains(c)) title.setText(a.label);
+            if (!pkg.equals(moving)) return;
+            boolean inDock = dockCards.contains(c);
+            hint.setText(movingOnLastRow() ? "\u25C0 \u25B6 \u25B2 MOVE  \u00B7  \u25BC REMOVE  \u00B7  OK DONE"
+                    : "\u25C0 \u25B6 \u25B2 \u25BC MOVE  \u00B7  OK DONE");
+            hint.setVisibility(inDock ? View.VISIBLE : View.GONE);
+            appsLabel.setText(inDock ? "ALL APPS" : "ALL APPS  \u00B7  \u25B2 ADD TO FAVORITES");
+            if (wiggle != null) wiggle.cancel(); // its tile was replaced by the rebuild
+            wiggle = ObjectAnimator.ofFloat(c, View.ROTATION, -2f, 2f);
+            wiggle.setDuration(110);
+            wiggle.setRepeatMode(ValueAnimator.REVERSE);
+            wiggle.setRepeatCount(ValueAnimator.INFINITE);
+            wiggle.start();
             return;
         }
     }
@@ -814,7 +816,8 @@ public class MainActivity extends Activity {
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent e) {
-        // Rearranging: arrows move the app, Down off the last row removes it, OK / Back finish. Both key actions are eaten so the
+        // Rearranging: in the dock, arrows move the app, Down off the last row removes it; in All apps,
+        // Up adds it to the dock and keeps it moving there. Any other key finishes. Both key actions are eaten so the
         // key-up can't click the tile or trigger Back.
         if (moving != null) {
             int k = e.getKeyCode();
@@ -824,9 +827,11 @@ public class MainActivity extends Activity {
             if (delta != 0 || done) {
                 // Repeats are the long-press that started the move still being held.
                 if (e.getAction() == KeyEvent.ACTION_DOWN && (delta != 0 || e.getRepeatCount() == 0)) {
-                    if (delta == dockCols && movingOnLastRow()) removeMoving();
-                    else if (delta != 0) moveBy(delta);
-                    else { String p = moving; stopMoving(); focusDock(p); }
+                    boolean inDock = dockPackages().contains(moving);
+                    if (!inDock && delta == -dockCols) { dockApps.add(moving); saveDock(); focusApp(moving); }
+                    else if (inDock && delta == dockCols && movingOnLastRow()) removeMoving();
+                    else if (inDock && delta != 0) moveBy(delta);
+                    else { String p = moving; stopMoving(); focusApp(p); }
                 }
                 return true;
             }
