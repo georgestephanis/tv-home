@@ -83,6 +83,13 @@ Change the dock: edit `config.xml`, then run `launcher/build-and-install.sh`.
   scripts run one per shell call.
 - **Apps installed from the Play Store didn't appear**, because the package broadcast was missed
   while another app was in front. The launcher re-checks with `getChangedPackages` on every return.
+- **Continue Watching can't come along.** Reading other apps' Watch Next rows needs
+  `ACCESS_ALL_EPG_DATA`, which is `signature|privileged`: only the stock launcher holds it, and
+  `pm grant` can't give it to a sideloaded app. Each streaming app still has its own row.
+- **Only disable `setupwraith` once setup is done.** Check `settings get secure user_setup_complete`
+  is `1` first.
+- **`adb shell` inside a `while read` loop eats the loop's input**, so only the first line runs.
+  Use `adb shell ... </dev/null` (or `adb shell -n`).
 - **Unsplash blocks scripted downloads** with a bot check. The wallpapers come from Wikimedia
   Commons Featured Pictures instead.
 
@@ -90,7 +97,7 @@ Change the dock: edit `config.xml`, then run `launcher/build-and-install.sh`.
 
 Android TV and Google TV: TCL, Xiaomi/Redmi, Hisense, Sony, OnePlus, Realme, Nvidia Shield,
 Chromecast with Google TV and most others. Not Samsung (Tizen), LG (webOS) or Fire TV.
-Tested on: TCL Google TV (Android 11). Add yours to `examples/`.
+Tested on: TCL Google TV (Android 11), Google TV Streamer (Android 14). Add yours to `examples/`.
 
 ## Credits
 

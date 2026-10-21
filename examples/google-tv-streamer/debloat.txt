@@ -1,0 +1,32 @@
+# Google TV Streamer (kirkwood), Android 14, build UTTK.260317.003
+# Apply: tools/disable.sh examples/google-tv-streamer/debloat.txt   Undo: tools/restore.sh <same file>
+# Everything is DISABLED for user 0, never uninstalled.
+# Answers here: keeps voice search (katniss) and casting (mediashell); no Google Home panel, no Ambient.
+# Can't be disabled (protected): com.google.android.devicelockcontroller
+
+# Ads / Privacy Sandbox
+com.google.android.adservices.api
+com.google.android.ext.adservices.api
+com.google.android.ondevicepersonalization.services
+com.google.android.federatedcompute
+
+# Telemetry and feedback
+com.google.android.feedback
+com.android.tv.feedbackconsent
+com.google.android.tv.remotecontrol.logging
+com.google.android.partnersetup             # partner/referral setup
+
+# Junk
+android.autoinstalls.config.google.sabrina  # pushes partner app auto-installs
+com.android.gallery3d
+com.google.android.videos                   # Google TV app (movie store); keep if you buy from Google
+com.google.android.play.games
+
+# Ambient screensaver AND the Google Home smart-home panel / camera view live in this one package.
+# Point the screensaver elsewhere first:
+#   settings put secure screensaver_components com.android.dreams.basic/.Colors
+com.google.android.apps.tv.dreamx
+
+# Stock home: build-and-install.sh disables launcherx and setupwraith itself. Disabling launcherx
+# also removes the cross-app Continue Watching row (see README gotchas).
+com.google.android.tvlauncher               # legacy home, unused on Google TV
