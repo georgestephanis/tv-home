@@ -341,6 +341,8 @@ public class MainActivity extends Activity {
         android.content.pm.ChangedPackages changed = pm.getChangedPackages(packageSeq);
         if (changed != null) packageSeq = changed.getSequenceNumber();
         Intent q = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER);
+        View f = getCurrentFocus();
+        String focusedPkg = f != null && f.getTag() instanceof App ? ((App) f.getTag()).pkg : null;
         Map<String, App> byPkg = new HashMap<>();
         for (ResolveInfo ri : pm.queryIntentActivities(q, 0)) {
             ActivityInfo ai = ri.activityInfo;
@@ -400,6 +402,10 @@ public class MainActivity extends Activity {
         wireFocus();
 
         if (!dock.isEmpty()) { title.setText(dock.get(0).label); setGlow(dock.get(0).color); }
+        else title.setText("");
+        // View ids are new after a rebuild, so refocus by package; keep a move going across it.
+        if (focusApp(moving != null ? moving : focusedPkg)) return;
+        if (moving != null) stopMoving(); // the app being moved was uninstalled
         View last = lastFocusedId == View.NO_ID ? null : findViewById(lastFocusedId);
         if (last != null) last.requestFocus();
         else if (!dockCards.isEmpty()) dockCards.get(0).requestFocus();
@@ -426,6 +432,7 @@ public class MainActivity extends Activity {
         card.setFocusable(true);
         card.setClickable(true);
         card.setTag(app);
+        card.setContentDescription(app.label);
         card.setClipToOutline(true);
         card.setOutlineProvider(new ViewOutlineProvider() {
             @Override public void getOutline(View v, Outline o) {
@@ -560,18 +567,19 @@ public class MainActivity extends Activity {
         String p = moving;
         stopMoving();
         dockApps.remove(p);
-        saveDock();
-        focusApp(p);
+        saveDock(); // refocuses p, now in All apps
     }
 
     private void stopMoving() {
         moving = null;
         hint.setVisibility(View.GONE);
-        appsLabel.setText("ALL APPS");
         if (wiggle == null) return;
+        View c = (View) wiggle.getTarget();
         wiggle.cancel();
-        ((View) wiggle.getTarget()).setRotation(0);
         wiggle = null;
+        c.setRotation(0);
+        ViewGroup box = (ViewGroup) c.getParent();
+        if (box.getChildCount() > 1) ((TextView) box.getChildAt(1)).setText(((App) c.getTag()).label);
     }
 
     private boolean movingOnLastRow() {
@@ -582,14 +590,14 @@ public class MainActivity extends Activity {
     /** Move the app being rearranged by delta places among the visible dock tiles. */
     private void moveBy(int delta) {
         List<String> order = dockPackages();
-        int i = order.indexOf(moving), j = Math.max(0, Math.min(order.size() - 1, i + delta));
-        if (i < 0 || i == j) return;
+        // Past the end clamps to last place (Down into a short last row); before the start does nothing.
+        int i = order.indexOf(moving), j = Math.min(order.size() - 1, i + delta);
+        if (i < 0 || j < 0 || i == j) return;
         order.add(j, order.remove(i));
         for (String p : dockApps) if (!order.contains(p)) order.add(p); // keep uninstalled favourites
         dockApps.clear();
         dockApps.addAll(order);
         saveDock();
-        focusApp(moving);
     }
 
     private List<String> dockPackages() {
@@ -604,29 +612,36 @@ public class MainActivity extends Activity {
     }
 
     /** Focus an app's tile by package (view ids change on every rebuild); wiggle it if it's moving. */
-    private void focusApp(String pkg) {
+    private boolean focusApp(String pkg) {
+        if (pkg == null) return false;
         List<View> all = new ArrayList<>(dockCards);
         all.addAll(gridCards);
         for (View c : all) {
             App a = (App) c.getTag();
             if (!a.pkg.equals(pkg)) continue;
             c.requestFocus();
-            // Set explicitly: refocusing an already-focused tile doesn't fire its focus listener.
-            if (dockCards.contains(c)) title.setText(a.label);
-            if (!pkg.equals(moving)) return;
             boolean inDock = dockCards.contains(c);
-            hint.setText(movingOnLastRow() ? "\u25C0 \u25B6 \u25B2 MOVE  \u00B7  \u25BC REMOVE  \u00B7  OK DONE"
-                    : "\u25C0 \u25B6 \u25B2 \u25BC MOVE  \u00B7  OK DONE");
-            hint.setVisibility(inDock ? View.VISIBLE : View.GONE);
-            appsLabel.setText(inDock ? "ALL APPS" : "ALL APPS  \u00B7  \u25B2 ADD TO FAVORITES");
+            // Set explicitly: refocusing an already-focused tile doesn't fire its focus listener.
+            if (inDock) title.setText(a.label);
+            if (!pkg.equals(moving)) return true;
+            if (inDock) {
+                boolean last = movingOnLastRow();
+                hint.setText("\u25C0 \u25B6" + (dockCards.indexOf(c) >= dockCols ? " \u25B2" : "") + (last ? "" : " \u25BC")
+                        + " MOVE" + (last ? "  \u00B7  \u25BC REMOVE" : "") + "  \u00B7  OK DONE");
+                hint.setVisibility(View.VISIBLE);
+            } else {
+                // The All apps tile's own name label, since the dock title is scrolled away.
+                ((TextView) ((ViewGroup) c.getParent()).getChildAt(1)).setText("\u25B2 ADD TO FAVORITES");
+            }
             if (wiggle != null) wiggle.cancel(); // its tile was replaced by the rebuild
             wiggle = ObjectAnimator.ofFloat(c, View.ROTATION, -2f, 2f);
-            wiggle.setDuration(110);
+            wiggle.setDuration(220);
             wiggle.setRepeatMode(ValueAnimator.REVERSE);
             wiggle.setRepeatCount(ValueAnimator.INFINITE);
             wiggle.start();
-            return;
+            return true;
         }
+        return false;
     }
 
     // ---------------------------------------------------------------- status
@@ -828,7 +843,7 @@ public class MainActivity extends Activity {
                 // Repeats are the long-press that started the move still being held.
                 if (e.getAction() == KeyEvent.ACTION_DOWN && (delta != 0 || e.getRepeatCount() == 0)) {
                     boolean inDock = dockPackages().contains(moving);
-                    if (!inDock && delta == -dockCols) { dockApps.add(moving); saveDock(); focusApp(moving); }
+                    if (!inDock && delta == -dockCols) { dockApps.add(moving); saveDock(); }
                     else if (inDock && delta == dockCols && movingOnLastRow()) removeMoving();
                     else if (inDock && delta != 0) moveBy(delta);
                     else { String p = moving; stopMoving(); focusApp(p); }
