@@ -937,7 +937,7 @@ public class MainActivity extends Activity {
         settingsRow(panel, "TV settings", "›", () -> { closeSettings(); launch(new Intent(Settings.ACTION_SETTINGS)); }, null, null);
         numberRow(panel, prefs, "Columns", "columns", () -> cols, n -> cols = n,
                 () -> scroll.smoothScrollTo(0, Math.max(0, appsLabel.getTop() - dp(48)))); // show the grid it changes
-        numberRow(panel, prefs, "Dock columns", "dock_columns", dockCols, () -> scroll.smoothScrollTo(0, 0));
+        numberRow(panel, prefs, "Dock columns", "dock_columns", () -> dockCols, n -> dockCols = n, () -> scroll.smoothScrollTo(0, 0));
         if (systemSearch() != null) { // no system search: no pill, nothing to toggle
             boolean on = prefs.getBoolean("search", true);
             settingsRow(panel, "Search button", on ? "On" : "Off", () -> change(prefs.edit().putBoolean("search", !on)), null,
@@ -1021,6 +1021,7 @@ public class MainActivity extends Activity {
     private List<View> allCards() {
         List<View> all = new ArrayList<>(dockCards);
         all.addAll(gridCards);
+        all.addAll(hiddenCards);
         return all;
     }
 
