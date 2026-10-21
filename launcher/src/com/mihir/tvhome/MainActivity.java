@@ -4,7 +4,6 @@ import android.animation.ArgbEvaluator;
 import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.app.SearchManager;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
@@ -116,7 +115,8 @@ public class MainActivity extends Activity {
         }
     };
     private boolean hasSearch;
-    private AlertDialog settingsDialog;
+    private FrameLayout root;
+    private View settingsPanel;
     private int settingsPos = -1, clickedPos;
 
     // ---------------------------------------------------------------- lifecycle
@@ -137,7 +137,7 @@ public class MainActivity extends Activity {
                         | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
         setContentView(buildUi());
         buildApps();
-        if (b != null && b.getInt("settings", -1) >= 0) showSettings(b.getInt("settings"));
+        if (b != null && b.getInt("settings", -1) >= 0) showSettings(b.getInt("settings"), false);
 
         IntentFilter pf = new IntentFilter();
         pf.addAction(Intent.ACTION_PACKAGE_ADDED);
@@ -183,7 +183,6 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         unregisterReceiver(packages);
-        if (settingsDialog != null) settingsDialog.dismiss();
         super.onDestroy();
     }
 
@@ -200,6 +199,7 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
+        if (settingsPanel != null) { closeSettings(); return; }
         // Home has nowhere to go back to; Back from the grid returns to the dock.
         if (scroll.getScrollY() > 0 && !dockCards.isEmpty()) dockCards.get(0).requestFocus();
     }
@@ -207,7 +207,7 @@ public class MainActivity extends Activity {
     // ---------------------------------------------------------------- layout
 
     private View buildUi() {
-        FrameLayout root = new FrameLayout(this);
+        root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
 
         // Wallpaper: two stacked layers so a new photo can crossfade in over the old one.
@@ -367,7 +367,7 @@ public class MainActivity extends Activity {
         right.setGravity(Gravity.CENTER_VERTICAL);
         right.setClipChildren(false);
         TextView settings = pill("Settings", "⚙");
-        settings.setOnClickListener(v -> showSettings(0));
+        settings.setOnClickListener(v -> showSettings(0, true));
         List<TextView> top = new ArrayList<>();
         Intent search = searchIntent();
         hasSearch = search != null;
@@ -917,36 +917,84 @@ public class MainActivity extends Activity {
 
     // ---------------------------------------------------------------- settings
 
-    /** TV settings plus the launcher's own options. Changes recreate the activity and reopen this on the same row. */
-    private void showSettings(int pos) {
+    /** Side panel with TV settings plus the launcher's own options. Changes recreate the activity and reopen it on the same row. */
+    private void showSettings(int pos, boolean animate) {
         SharedPreferences prefs = getPreferences(MODE_PRIVATE);
         Intent home = new Intent(Settings.ACTION_HOME_SETTINGS);
-        List<String> labels = new ArrayList<>();
+        List<String[]> rows = new ArrayList<>();
         List<Runnable> actions = new ArrayList<>();
-        labels.add("TV settings");
-        actions.add(() -> launch(new Intent(Settings.ACTION_SETTINGS)));
-        labels.add("Columns: " + cols);
+        rows.add(new String[]{"TV settings", "›"});
+        actions.add(() -> { closeSettings(); launch(new Intent(Settings.ACTION_SETTINGS)); });
+        rows.add(new String[]{"Columns", String.valueOf(cols)});
         actions.add(() -> change(prefs.edit().putInt("columns", cols >= 8 ? 4 : cols + 1)));
         labels.add("Dock columns: " + dockCols);
         actions.add(() -> change(prefs.edit().putInt("dock_columns", dockCols >= 8 ? 4 : dockCols + 1)));
         if (systemSearch() != null) { // no system search: no pill, nothing to toggle
             boolean on = prefs.getBoolean("search", true);
-            labels.add("Search button: " + (on ? "On" : "Off"));
+            rows.add(new String[]{"Search button", on ? "On" : "Off"});
             actions.add(() -> change(prefs.edit().putBoolean("search", !on)));
         }
         if (getPackageManager().resolveActivity(home, 0) != null) {
-            labels.add("Default home app…");
-            actions.add(() -> launch(home));
+            rows.add(new String[]{"Default home app", "›"});
+            actions.add(() -> { closeSettings(); launch(home); });
         }
-        settingsDialog = new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                .setTitle("Settings")
-                .setItems(labels.toArray(new String[0]), (d, which) -> {
-                    clickedPos = which;
-                    actions.get(which).run();
-                })
-                .setOnDismissListener(d -> settingsDialog = null)
-                .show();
-        settingsDialog.getListView().setSelection(Math.min(pos, labels.size() - 1));
+
+        FrameLayout overlay = new FrameLayout(this);
+        overlay.setBackgroundColor(0x99000000);
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(28), dp(36), dp(28), dp(28));
+        panel.setBackgroundColor(0xF0141414);
+        TextView title = text(24, "sans-serif-light", Color.WHITE);
+        title.setText("Settings");
+        panel.addView(title, llp(-2, -2, dp(12), 0, 0, dp(20)));
+        List<View> views = new ArrayList<>();
+        for (int k = 0; k < rows.size(); k++) {
+            int which = k;
+            LinearLayout row = new LinearLayout(this);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(dp(16), 0, dp(16), 0);
+            row.setFocusable(true);
+            row.setId(View.generateViewId());
+            TextView label = text(15, "sans-serif", 0xE6FFFFFF), value = text(15, "sans-serif-medium", 0x99FFFFFF);
+            label.setText(rows.get(k)[0]);
+            value.setText(rows.get(k)[1]);
+            row.addView(label, new LinearLayout.LayoutParams(0, -2, 1));
+            row.addView(value);
+            GradientDrawable bg = new GradientDrawable();
+            bg.setCornerRadius(dp(12));
+            row.setBackground(bg);
+            row.setOnFocusChangeListener((v, has) -> {
+                bg.setColor(has ? 0xF2FFFFFF : 0);
+                label.setTextColor(has ? 0xFF111111 : 0xE6FFFFFF);
+                value.setTextColor(has ? 0xFF555555 : 0x99FFFFFF);
+            });
+            row.setOnClickListener(v -> { clickedPos = which; actions.get(which).run(); });
+            row.setNextFocusLeftId(row.getId());
+            row.setNextFocusRightId(row.getId());
+            panel.addView(row, llp(-1, dp(48), 0, 0, 0, dp(4)));
+            views.add(row);
+        }
+        views.get(0).setNextFocusUpId(views.get(0).getId());
+        views.get(views.size() - 1).setNextFocusDownId(views.get(views.size() - 1).getId());
+        overlay.addView(panel, new FrameLayout.LayoutParams(dp(360), -1, Gravity.END));
+        root.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
+        settingsPanel = overlay;
+        views.get(Math.min(pos, views.size() - 1)).requestFocus();
+        if (animate) {
+            overlay.setAlpha(0f);
+            overlay.animate().alpha(1f).setDuration(200).start();
+            panel.setTranslationX(dp(360));
+            panel.animate().translationX(0).setInterpolator(new DecelerateInterpolator(2f)).setDuration(260).start();
+        }
+    }
+
+    private void closeSettings() {
+        View overlay = settingsPanel;
+        settingsPanel = null;
+        overlay.animate().alpha(0f).setDuration(200).withEndAction(() -> root.removeView(overlay)).start();
+        ((ViewGroup) overlay).getChildAt(0).animate().translationX(dp(360)).setDuration(200).start();
+        if (!pills.isEmpty()) pills.get(pills.size() - 1).requestFocus();
     }
 
     private void change(SharedPreferences.Editor e) {
