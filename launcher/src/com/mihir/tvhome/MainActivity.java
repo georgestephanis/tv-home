@@ -270,6 +270,7 @@ public class MainActivity extends Activity {
         // Enough dock rows to reach the clock scroll inside the band, fading out at the edges.
         dockScroll = new MaxHeightScrollView(this);
         dockScroll.setBackground(band);
+        dockScroll.setClipToOutline(true); // its parents let children overflow
         dockScroll.setVerticalScrollBarEnabled(false);
         dockScroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
         dockScroll.setVerticalFadingEdgeEnabled(true);
