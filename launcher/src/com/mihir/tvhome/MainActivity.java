@@ -34,6 +34,7 @@ import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewOutlineProvider;
+import android.view.ViewTreeObserver;
 import android.view.animation.DecelerateInterpolator;
 import android.view.animation.OvershootInterpolator;
 import android.widget.FrameLayout;
@@ -934,7 +935,7 @@ public class MainActivity extends Activity {
         panel.addView(title, llp(-2, -2, dp(12), 0, 0, dp(20)));
 
         settingsRow(panel, "TV settings", "›", () -> { closeSettings(); launch(new Intent(Settings.ACTION_SETTINGS)); }, null, null);
-        numberRow(panel, prefs, "Columns", "columns", cols,
+        numberRow(panel, prefs, "Columns", "columns", () -> cols, n -> cols = n,
                 () -> scroll.smoothScrollTo(0, Math.max(0, appsLabel.getTop() - dp(48)))); // show the grid it changes
         numberRow(panel, prefs, "Dock columns", "dock_columns", dockCols, () -> scroll.smoothScrollTo(0, 0));
         if (systemSearch() != null) { // no system search: no pill, nothing to toggle
@@ -970,15 +971,68 @@ public class MainActivity extends Activity {
         scroll.post(focus::requestFocus); // after layout, so its preview can scroll to real positions
     }
 
-    /** A 4–8 number changed with Left/Right. */
-    private void numberRow(LinearLayout panel, SharedPreferences prefs, String label, String key, int value, Runnable preview) {
-        settingsRow(panel, label, (value > 4 ? "‹   " : "     ") + value + (value < 8 ? "   ›" : "     "), null, d -> {
-            if (value + d >= 4 && value + d <= 8) change(prefs.edit().putInt(key, value + d));
+    /** A 4–8 number changed with Left/Right, applied in place with the tiles sliding to their new spots. */
+    private void numberRow(LinearLayout panel, SharedPreferences prefs, String label, String key,
+                           java.util.function.IntSupplier get, java.util.function.IntConsumer set, Runnable preview) {
+        TextView[] shown = new TextView[1];
+        shown[0] = settingsRow(panel, label, numberText(get.getAsInt()), null, d -> {
+            int n = get.getAsInt() + d;
+            if (n < 4 || n > 8) return;
+            prefs.edit().putInt(key, n).apply();
+            set.accept(n);
+            shown[0].setText(numberText(n));
+            reflow();
         }, preview);
     }
 
+    private static String numberText(int n) {
+        return (n > 4 ? "‹   " : "     ") + n + (n < 8 ? "   ›" : "     ");
+    }
+
+    /** Rebuilds the apps after a layout change, moving and resizing each tile from where it was. */
+    private void reflow() {
+        Map<String, float[]> before = new HashMap<>();
+        for (View c : allCards()) before.put(((App) c.getTag()).pkg, place((View) c.getParent()));
+        buildApps();
+        ViewTreeObserver vto = scroll.getViewTreeObserver();
+        vto.addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener() {
+            @Override public boolean onPreDraw() {
+                scroll.getViewTreeObserver().removeOnPreDrawListener(this);
+                float s = scroll.getScaleX(); // screen offsets shrink with the scaled home screen
+                for (View c : allCards()) {
+                    float[] was = before.get(((App) c.getTag()).pkg);
+                    if (was == null) continue;
+                    View box = (View) c.getParent();
+                    float[] now = place(box);
+                    box.setPivotX(0);
+                    box.setPivotY(0);
+                    box.setTranslationX((was[0] - now[0]) / s);
+                    box.setTranslationY((was[1] - now[1]) / s);
+                    box.setScaleX(was[2] / now[2]);
+                    box.setScaleY(was[2] / now[2]); // tiles keep their aspect ratio
+                    box.animate().translationX(0).translationY(0).scaleX(1).scaleY(1)
+                            .setInterpolator(new DecelerateInterpolator(2f)).setDuration(320).start();
+                }
+                return true;
+            }
+        });
+    }
+
+    private List<View> allCards() {
+        List<View> all = new ArrayList<>(dockCards);
+        all.addAll(gridCards);
+        return all;
+    }
+
+    /** On-screen x, y and width. */
+    private static float[] place(View v) {
+        int[] xy = new int[2];
+        v.getLocationOnScreen(xy);
+        return new float[]{xy[0], xy[1], v.getWidth() * v.getScaleX()};
+    }
+
     /** One panel row: click runs {@code click}; Left/Right call {@code step} with -1/+1; focusing it runs {@code preview}. */
-    private void settingsRow(LinearLayout panel, String text, String val, Runnable click,
+    private TextView settingsRow(LinearLayout panel, String text, String val, Runnable click,
                              java.util.function.IntConsumer step, Runnable preview) {
         int index = panel.getChildCount() - 1; // the title is child 0
         LinearLayout row = new LinearLayout(this);
@@ -1009,6 +1063,7 @@ public class MainActivity extends Activity {
         row.setNextFocusLeftId(row.getId());
         row.setNextFocusRightId(row.getId());
         panel.addView(row, llp(-1, dp(48), 0, 0, 0, dp(4)));
+        return value;
     }
 
     private void closeSettings() {
