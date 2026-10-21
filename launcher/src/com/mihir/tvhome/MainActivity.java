@@ -192,6 +192,7 @@ public class MainActivity extends Activity {
         // Home pressed while already home: jump back to the first dock app. From another app, keep focus where it was.
         stopMoving();
         collapseHidden();
+        if (settingsPanel != null) closeSettings();
         if (!hasWindowFocus()) return; // the activity is paused for the intent either way
         if (!dockCards.isEmpty()) dockCards.get(0).requestFocus();
         scroll.smoothScrollTo(0, 0);
@@ -978,6 +979,7 @@ public class MainActivity extends Activity {
         views.get(0).setNextFocusUpId(views.get(0).getId());
         views.get(views.size() - 1).setNextFocusDownId(views.get(views.size() - 1).getId());
         overlay.addView(panel, new FrameLayout.LayoutParams(dp(360), -1, Gravity.END));
+        trapFocus(true); // also stops the dock grabbing focus as the activity comes back up
         root.addView(overlay, new FrameLayout.LayoutParams(-1, -1));
         settingsPanel = overlay;
         views.get(Math.min(pos, views.size() - 1)).requestFocus();
@@ -992,9 +994,16 @@ public class MainActivity extends Activity {
     private void closeSettings() {
         View overlay = settingsPanel;
         settingsPanel = null;
+        trapFocus(false);
         overlay.animate().alpha(0f).setDuration(200).withEndAction(() -> root.removeView(overlay)).start();
         ((ViewGroup) overlay).getChildAt(0).animate().translationX(dp(360)).setDuration(200).start();
         if (!pills.isEmpty()) pills.get(pills.size() - 1).requestFocus();
+    }
+
+    private void trapFocus(boolean on) {
+        for (int k = 0; k < root.getChildCount(); k++) if (root.getChildAt(k) instanceof ViewGroup)
+            ((ViewGroup) root.getChildAt(k)).setDescendantFocusability(
+                    on ? ViewGroup.FOCUS_BLOCK_DESCENDANTS : ViewGroup.FOCUS_AFTER_DESCENDANTS);
     }
 
     private void change(SharedPreferences.Editor e) {
