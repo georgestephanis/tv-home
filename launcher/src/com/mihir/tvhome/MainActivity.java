@@ -4,6 +4,7 @@ import android.animation.ArgbEvaluator;
 import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
 import android.app.Activity;
+import android.app.SearchManager;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
@@ -107,8 +108,12 @@ public class MainActivity extends Activity {
         @Override public void onReceive(Context c, Intent i) { updateClock(); }
     };
     private final BroadcastReceiver packages = new BroadcastReceiver() {
-        @Override public void onReceive(Context c, Intent i) { buildApps(); }
+        @Override public void onReceive(Context c, Intent i) {
+            // The Search pill comes and goes with the system search app being enabled.
+            if (searchIntent() != null != hasSearch) recreate(); else buildApps();
+        }
     };
+    private boolean hasSearch;
 
     // ---------------------------------------------------------------- lifecycle
 
@@ -357,7 +362,16 @@ public class MainActivity extends Activity {
         right.setClipChildren(false);
         TextView settings = pill("Settings", "⚙");
         settings.setOnClickListener(v -> launch(new Intent(Settings.ACTION_SETTINGS)));
-        for (TextView p : new TextView[]{settings}) {
+        List<TextView> top = new ArrayList<>();
+        Intent search = searchIntent();
+        hasSearch = search != null;
+        if (hasSearch) {
+            TextView s = pill("Search", "⌕");
+            s.setOnClickListener(v -> launch(search));
+            top.add(s);
+        }
+        top.add(settings);
+        for (TextView p : top) {
             right.addView(p, llp(-2, dp(30), dp(10), 0, 0, 0));
             pills.add(p);
         }
@@ -883,6 +897,12 @@ public class MainActivity extends Activity {
         } catch (RuntimeException e) {
             return false;
         }
+    }
+
+    /** Google TV's search, or null if no enabled app handles it. */
+    private Intent searchIntent() {
+        Intent i = new Intent(SearchManager.INTENT_ACTION_GLOBAL_SEARCH);
+        return getPackageManager().resolveActivity(i, 0) != null ? i : null;
     }
 
     private TextView text(float sp, String family, int color) {
