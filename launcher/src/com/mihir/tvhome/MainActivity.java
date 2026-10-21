@@ -923,7 +923,6 @@ public class MainActivity extends Activity {
     /** Side panel with TV settings plus the launcher's own options. Changes recreate the activity and reopen it on the same row. */
     private void showSettings(int pos, boolean animate) {
         SharedPreferences prefs = getPreferences(MODE_PRIVATE);
-        Intent home = new Intent(Settings.ACTION_HOME_SETTINGS);
         FrameLayout overlay = new FrameLayout(this);
         overlay.setBackgroundColor(0x66000000);
         LinearLayout panel = new LinearLayout(this);
@@ -943,8 +942,6 @@ public class MainActivity extends Activity {
             settingsRow(panel, "Search button", on ? "On" : "Off", () -> change(prefs.edit().putBoolean("search", !on)), null,
                     () -> scroll.smoothScrollTo(0, 0));
         }
-        if (getPackageManager().resolveActivity(home, 0) != null)
-            settingsRow(panel, "Default home app", "›", () -> { closeSettings(); launch(home); }, null, null);
 
         List<View> rows = new ArrayList<>();
         for (int k = 1; k < panel.getChildCount(); k++) rows.add(panel.getChildAt(k));
