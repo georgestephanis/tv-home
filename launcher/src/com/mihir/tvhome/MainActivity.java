@@ -1011,7 +1011,7 @@ public class MainActivity extends Activity {
                     box.setScaleX(was[2] / now[2]);
                     box.setScaleY(was[2] / now[2]); // tiles keep their aspect ratio
                     box.animate().translationX(0).translationY(0).scaleX(1).scaleY(1)
-                            .setInterpolator(new DecelerateInterpolator(2f)).setDuration(320).start();
+                            .setInterpolator(new DecelerateInterpolator(1.5f)).setDuration(450).start();
                 }
                 return true;
             }
