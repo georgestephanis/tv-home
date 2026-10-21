@@ -642,19 +642,15 @@ public class MainActivity extends Activity {
 
     // ---------------------------------------------------------------- editing the dock
 
-    /** Down past the last dock row: drop the moving app into All apps. */
+    /** Down past the last dock row: drop the moving app into All apps, still moving so Up can undo it. */
     private void removeMoving() {
-        String p = moving;
-        stopMoving();
-        dockApps.remove(p);
-        saveDock(); // refocuses p, now in All apps
+        dockApps.remove(moving);
+        saveDock();
     }
 
-    /** Down from All apps: hide the moving app, opening the hidden section so focus can follow it. */
+    /** Down from All apps: hide the moving app, opening the hidden section so it can keep moving there. */
     private void hideMoving() {
-        String p = moving;
-        stopMoving();
-        userHidden.add(p);
+        userHidden.add(moving);
         showHidden = true;
         saveDock();
     }
@@ -924,7 +920,7 @@ public class MainActivity extends Activity {
     @Override
     public boolean dispatchKeyEvent(KeyEvent e) {
         // Rearranging: in the dock, arrows move the app, Down off the last row removes it; in All apps,
-        // Up adds it to the dock and keeps it moving there, Down hides it; in Hidden, Up unhides it.
+        // Up adds it to the dock, Down hides it; in Hidden, Up unhides it. It keeps moving through each step.
         // Any other key finishes. Both key actions are eaten so the
         // key-up can't click the tile or trigger Back.
         if (moving != null) {
