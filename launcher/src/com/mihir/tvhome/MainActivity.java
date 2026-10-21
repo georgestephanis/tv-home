@@ -1,6 +1,7 @@
 package com.mihir.tvhome;
 
 import android.animation.ArgbEvaluator;
+import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.app.AlertDialog;
@@ -61,6 +62,7 @@ public class MainActivity extends Activity {
     // Dock, hidden apps, Live TV and grid width come from res/values/config.xml.
     private final List<String> dockApps = new ArrayList<>(); // saved order, else config.xml
     private String moving; // dock app being rearranged, or null
+    private ObjectAnimator wiggle;
     private final Set<String> hidden = new HashSet<>();
     private int cols, dockCols;
 
@@ -154,7 +156,7 @@ public class MainActivity extends Activity {
         super.onPause();
         handler.removeCallbacks(rotateWallpaper);
         unregisterReceiver(tick);
-        moving = null;
+        stopMoving();
     }
 
     @Override
@@ -167,7 +169,7 @@ public class MainActivity extends Activity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         // Home pressed while already home: jump back to the first dock app.
-        moving = null;
+        stopMoving();
         if (!dockCards.isEmpty()) dockCards.get(0).requestFocus();
         scroll.smoothScrollTo(0, 0);
     }
@@ -542,27 +544,43 @@ public class MainActivity extends Activity {
 
     // ---------------------------------------------------------------- editing the dock
 
-    /** Long-press menu: add an app to the dock, or move / remove a dock app. */
+    /** Long-press: a dock app starts moving (wiggles); an All apps app can be added to the dock. */
     private void editTile(App app, boolean inDock) {
-        String[] items = inDock ? new String[]{"Move", "Remove from favorites"} : new String[]{"Add to favorites"};
+        if (inDock) {
+            moving = app.pkg;
+            focusDock(app.pkg);
+            return;
+        }
         new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
                 .setTitle(app.label)
-                .setItems(items, (d, which) -> {
-                    if (!inDock) {
-                        dockApps.add(app.pkg);
-                        saveDock();
-                        focusDock(app.pkg);
-                    } else if (which == 0) {
-                        moving = app.pkg;
-                        focusDock(app.pkg);
-                    } else {
-                        int i = dockPackages().indexOf(app.pkg);
-                        dockApps.remove(app.pkg);
-                        saveDock();
-                        if (!dockCards.isEmpty()) dockCards.get(Math.min(i, dockCards.size() - 1)).requestFocus();
-                    }
+                .setItems(new String[]{"Add to favorites"}, (d, which) -> {
+                    dockApps.add(app.pkg);
+                    saveDock();
+                    focusDock(app.pkg);
                 })
                 .show();
+    }
+
+    /** Down past the last dock row: drop the moving app into All apps. */
+    private void removeMoving() {
+        String p = moving;
+        stopMoving();
+        dockApps.remove(p);
+        saveDock();
+        for (View c : gridCards) if (((App) c.getTag()).pkg.equals(p)) c.requestFocus();
+    }
+
+    private void stopMoving() {
+        moving = null;
+        if (wiggle == null) return;
+        wiggle.cancel();
+        ((View) wiggle.getTarget()).setRotation(0);
+        wiggle = null;
+    }
+
+    private boolean movingOnLastRow() {
+        int i = dockPackages().indexOf(moving);
+        return i >= 0 && i / dockCols == (dockCards.size() - 1) / dockCols;
     }
 
     /** Move the app being rearranged by delta places among the visible dock tiles. */
@@ -595,7 +613,16 @@ public class MainActivity extends Activity {
             if (!a.pkg.equals(pkg)) continue;
             c.requestFocus();
             // Set explicitly: refocusing an already-focused tile doesn't fire its focus listener.
-            title.setText(pkg.equals(moving) ? "Moving " + a.label + "   \u25C0 \u25B6 \u25B2 \u25BC   OK when done" : a.label);
+            title.setText(pkg.equals(moving) ? "Moving " + a.label
+                    + (movingOnLastRow() ? "  \u00B7  \u25BC removes" : "") + "  \u00B7  OK when done" : a.label);
+            if (pkg.equals(moving)) {
+                if (wiggle != null) wiggle.cancel(); // its tile was replaced by the rebuild
+                wiggle = ObjectAnimator.ofFloat(c, View.ROTATION, -2f, 2f);
+                wiggle.setDuration(110);
+                wiggle.setRepeatMode(ValueAnimator.REVERSE);
+                wiggle.setRepeatCount(ValueAnimator.INFINITE);
+                wiggle.start();
+            }
             return;
         }
     }
@@ -787,7 +814,7 @@ public class MainActivity extends Activity {
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent e) {
-        // Rearranging: arrows move the app, OK / Back finish. Both key actions are eaten so the
+        // Rearranging: arrows move the app, Down off the last row removes it, OK / Back finish. Both key actions are eaten so the
         // key-up can't click the tile or trigger Back.
         if (moving != null) {
             int k = e.getKeyCode();
@@ -796,8 +823,9 @@ public class MainActivity extends Activity {
             boolean done = k == KeyEvent.KEYCODE_DPAD_CENTER || k == KeyEvent.KEYCODE_ENTER || k == KeyEvent.KEYCODE_BACK;
             if (delta != 0 || done) {
                 if (e.getAction() == KeyEvent.ACTION_DOWN) {
-                    if (delta != 0) moveBy(delta);
-                    else { String p = moving; moving = null; focusDock(p); }
+                    if (delta == dockCols && movingOnLastRow()) removeMoving();
+                    else if (delta != 0) moveBy(delta);
+                    else { String p = moving; stopMoving(); focusDock(p); }
                 }
                 return true;
             }
