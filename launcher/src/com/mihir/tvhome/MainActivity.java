@@ -94,6 +94,7 @@ public class MainActivity extends Activity {
     private View gridShade;
     private String[] wallpapers = new String[0];
     private int wallIndex = -1;
+    private boolean recreated; // e.g. by a settings change: keep the current wallpaper
     private long wallChangedAt;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable rotateWallpaper = this::nextWallpaper;
@@ -124,6 +125,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
+        recreated = b != null;
         String saved = getPreferences(MODE_PRIVATE).getString("dock", null);
         dockApps.addAll(Arrays.asList(saved != null ? TextUtils.split(saved, ",")
                 : getResources().getStringArray(R.array.dock_apps)));
@@ -803,7 +805,7 @@ public class MainActivity extends Activity {
     private void nextWallpaper() {
         handler.removeCallbacks(rotateWallpaper);
         if (wallpapers.length == 0) return;
-        if (wallIndex < 0) wallIndex = getPreferences(MODE_PRIVATE).getInt("wallpaper", -1);
+        if (wallIndex < 0) wallIndex = Math.max(-1, getPreferences(MODE_PRIVATE).getInt("wallpaper", -1) - (recreated ? 1 : 0));
         wallIndex = (wallIndex + 1) % wallpapers.length;
         getPreferences(MODE_PRIVATE).edit().putInt("wallpaper", wallIndex).apply();
         wallChangedAt = SystemClock.elapsedRealtime();
