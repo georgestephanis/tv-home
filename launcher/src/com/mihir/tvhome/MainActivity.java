@@ -822,7 +822,8 @@ public class MainActivity extends Activity {
                     : k == KeyEvent.KEYCODE_DPAD_UP ? -dockCols : k == KeyEvent.KEYCODE_DPAD_DOWN ? dockCols : 0;
             boolean done = k == KeyEvent.KEYCODE_DPAD_CENTER || k == KeyEvent.KEYCODE_ENTER || k == KeyEvent.KEYCODE_BACK;
             if (delta != 0 || done) {
-                if (e.getAction() == KeyEvent.ACTION_DOWN) {
+                // Repeats are the long-press that started the move still being held.
+                if (e.getAction() == KeyEvent.ACTION_DOWN && (delta != 0 || e.getRepeatCount() == 0)) {
                     if (delta == dockCols && movingOnLastRow()) removeMoving();
                     else if (delta != 0) moveBy(delta);
                     else { String p = moving; stopMoving(); focusDock(p); }
